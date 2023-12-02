@@ -1,6 +1,5 @@
+use riscv::interpreter::cpu::Cpu;
 use std::io::Read;
-
-use riscv::start;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -21,5 +20,8 @@ fn main() {
         std::process::exit(1);
     });
 
-    start(code);
+    match Cpu::new(code).execute() {
+        Some(e) => panic!("{:?}", e),
+        None => (),
+    };
 }

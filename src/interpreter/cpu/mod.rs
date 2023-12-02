@@ -19,6 +19,13 @@ impl Cpu {
         }
     }
 
+    pub fn write_reg(&mut self, reg: usize, value: u64) {
+        self.regs[reg] = value;
+    }
+    pub fn read_reg(&self, reg: usize) -> u64 {
+        self.regs[reg]
+    }
+
     pub fn load(&mut self, addr: u64, size: u64) -> Result<u64, Exception> {
         self.bus.load(addr, size)
     }

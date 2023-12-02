@@ -2,23 +2,95 @@ use crate::interpreter::exception::Exception;
 
 use super::Cpu;
 
-enum Instruction {
-    Add = 0b0110011,
-    Addi = 0b0010011,
+struct Instruction {}
+
+impl Instruction {
+    fn get_opcode(inst: u32) -> u32 {
+        inst & 0x7f
+    }
+    fn get_rd(inst: u32) -> usize {
+        ((inst >> 7) & 0x1f) as usize
+    }
+    fn get_rs1(inst: u32) -> usize {
+        ((inst >> 15) & 0x1f) as usize
+    }
+    fn get_rs2(inst: u32) -> usize {
+        ((inst >> 20) & 0x1f) as usize
+    }
+    fn get_funct3(inst: u32) -> u32 {
+        (inst >> 12) & 0x7
+    }
+    fn get_funct7(inst: u32) -> u32 {
+        (inst >> 25) & 0x7f
+    }
+    fn get_shamt(inst: u32) -> u64 {
+        ((inst >> 20) & 0b111111) as u64
+    }
+    fn get_shamt_reserved(inst: u32) -> u32 {
+        inst >> 26
+    }
+
+    /// 20..31:imm[11:0]
+    fn get_imm_type_i(inst: u32) -> u64 {
+        ((inst as i32 as i64) >> 20) as u64
+    }
+    /// 12..31:imm[31:12]
+    fn get_imm_type_u(inst: u32) -> u64 {
+        (inst & (!0b1111_1111_1111)) as i32 as i64 as u64
+    }
+    /// 12..19:imm[19:12] & 20:imm[11] & 21..30:imm[10:1] & 31:imm[20]
+    fn get_imm_type_j(inst: u32) -> u64 {
+        let v1: i64 = (inst & 0x8000_0000) as i32 as i64 >> 11; // imm[20]
+        let v2: u32 = inst & 0xff000; // imm[19:12]
+        let v3: u32 = (inst >> 9) & 0x800; // imm[11]
+        let v4: u32 = (inst >> 20) & 0x7fe; // imm[10:1]
+        v1 as u64 | (v2 | v3 | v4) as u64
+    }
+    /// 7:imm[11] & 8..11:imm[4:1] & 25..30::imm[10:5] & 31:imm[12]
+    fn get_imm_type_b(inst: u32) -> u64 {
+        let v1: i64 = (inst & 0x8000_0000) as i32 as i64 >> 19; // 31:imm[12]
+        let v2: u32 = (inst & 0x80) << 4; // 7:imm[11]
+        let v3: u32 = (inst >> 20) & 0b111_1110_0000; // 25..30::imm[10:5]
+        let v4: u32 = (inst >> 7) & 0b1_1110;
+        v1 as u64 | (v2 | v3 | v4) as u64
+    }
+    /// 7..11:imm[4:0] & 25..31:imm[11:5]
+    fn get_imm_type_s(inst: u32) -> u64 {
+        let v1: i64 = (inst & 0xfe000000) as i32 as i64 >> 20;
+        let v2 = (inst >> 7) & 0b1_1111;
+        v1 as u64 | v2 as u64
+    }
+    // J 12..19:imm[19:12] & 20:imm[11] & 21..30:imm[10:1] & 31:imm[20]
 }
 
-impl TryFrom<u32> for Instruction {
-    type Error = Exception;
-    fn try_from(v: u32) -> Result<Self, Self::Error> {
-        match v {
-            x if x == Instruction::Addi as u32 => Ok(Instruction::Addi),
-            x if x == Instruction::Add as u32 => Ok(Instruction::Add),
-            _ => Err(Exception::UnknownInstructionOpcode { opcode: v }),
-        }
-    }
+fn sext(value: u64) -> u64 {
+    value as u32 as i32 as i64 as u64
+}
+fn cut_to_u32(value: u64) -> u64 {
+    value & 0xffff_ffff
+}
+fn wrapping_add(a: u64, b: u64) -> u64 {
+    a.wrapping_add(b)
+}
+fn wrapping_sub(a: u64, b: u64) -> u64 {
+    a.wrapping_sub(b)
+}
+fn signed_left_shift(v: u64, shamt: u64) -> u64 {
+    (v as i64 >> shamt as i64) as u64
 }
 
 impl Cpu {
+    fn increase_pc(&mut self) {
+        self.pc = wrapping_add(self.pc, 4);
+    }
+    fn tunning_for_increase_pc(&mut self) {
+        self.pc = wrapping_sub(self.pc, 4);
+    }
+    fn set_pc_with_tunning(&mut self, pc: u64) {
+        self.pc = pc;
+        self.tunning_for_increase_pc();
+    }
+
     pub fn execute(&mut self) -> Option<Exception> {
         loop {
             let inst = match self.instructure_fetch() {
@@ -29,28 +101,279 @@ impl Cpu {
                 Ok(_) => (),
                 Err(err) => return Some(err),
             };
-            self.pc += 4;
+            self.increase_pc();
         }
     }
 
     pub fn execute_instruction(&mut self, inst: u32) -> Result<(), Exception> {
-        // decode as R-type
-        let opcode = Instruction::try_from(inst & 0x7f)?;
-        let rd = ((inst >> 7) & 0x1f) as usize;
-        let rs1 = ((inst >> 15) & 0x1f) as usize;
-        let rs2 = ((inst >> 20) & 0x1f) as usize;
-        // let funct3 = (inst >> 12) & 0x7;
-        // let funct7 = (inst >> 25) & 0x7f;
-        self.regs[0] = 0;
-        match opcode {
-            Instruction::Addi => {
-                let imm = ((inst & 0xfff0_0000) as i64 >> 20) as u64;
-                self.regs[rd] = self.regs[rs1].wrapping_add(imm);
-            }
-            Instruction::Add => {
-                self.regs[rd] = self.regs[rs1].wrapping_add(self.regs[rs2]);
-            }
+        if inst == 0 || inst == 0xffff_ffff {
+            return Err(Exception::InvalidInstruction);
         }
+        self.regs[0] = 0;
+        if inst == 0b000000000001_00000_000_00000_1110011 {
+            // ebreak
+            return Err(Exception::Breakpoint);
+        }
+        if inst == 0b000000000000_00000_000_00000_1110011 {
+            // ecall
+            return Err(Exception::EnvironmentCall);
+        }
+        match Instruction::get_opcode(inst) {
+            0b0000011 => {
+                let rd = Instruction::get_rd(inst);
+                let rs1 = Instruction::get_rs1(inst);
+                let imm = Instruction::get_imm_type_i(inst);
+                let address = wrapping_add(self.read_reg(rs1), sext(imm));
+                match Instruction::get_funct3(inst) {
+                    // lb
+                    0b000 => self.write_reg(rd, sext(self.bus.load(address, 8)?)),
+                    // lbu
+                    0b100 => self.write_reg(rd, self.bus.load(address, 8)?),
+                    // lh
+                    0b001 => self.write_reg(rd, sext(self.bus.load(address, 16)?)),
+                    // lhu
+                    0b101 => self.write_reg(rd, self.bus.load(address, 16)?),
+                    // lw
+                    0b010 => self.write_reg(rd, sext(self.bus.load(address, 32)?)),
+                    // lwu
+                    0b110 => self.write_reg(rd, self.bus.load(address, 32)?),
+                    // ld
+                    0b011 => self.write_reg(rd, self.bus.load(address, 64)?),
+                    _ => todo!(),
+                };
+            }
+            0b0100011 => {
+                let rs1 = Instruction::get_rs1(inst);
+                let rs2 = Instruction::get_rs2(inst);
+                let imm = Instruction::get_imm_type_s(inst);
+                let address = wrapping_add(self.read_reg(rs1), sext(imm));
+                match Instruction::get_funct3(inst) {
+                    // sb
+                    0b000 => self.bus.store(address, 8, self.read_reg(rs2)),
+                    // sh
+                    0b001 => self.bus.store(address, 16, self.read_reg(rs2)),
+                    // sw
+                    0b010 => self.bus.store(address, 32, self.read_reg(rs2)),
+                    // sd
+                    0b011 => self.bus.store(address, 64, self.read_reg(rs2)),
+                    _ => todo!(),
+                }?
+            }
+            0b0010011 => {
+                let rs1_value = self.read_reg(Instruction::get_rs1(inst));
+                let shamt = Instruction::get_shamt(inst);
+                let shamt_reserved = Instruction::get_shamt_reserved(inst);
+                let imm = sext(Instruction::get_imm_type_i(inst));
+                let set_rd = &mut |value: u64| self.write_reg(Instruction::get_rd(inst), value);
+                match Instruction::get_funct3(inst) {
+                    // addi
+                    0b000 => set_rd(wrapping_add(rs1_value, imm)),
+                    // stli
+                    0b010 => {
+                        if (rs1_value as i64) < (imm as i64) {
+                            set_rd(1);
+                        } else {
+                            set_rd(0);
+                        };
+                    }
+                    // sltiu
+                    0b011 => set_rd(if rs1_value < imm { 1 } else { 0 }),
+                    // xori
+                    0b100 => set_rd(rs1_value ^ imm),
+                    // ori
+                    0b110 => set_rd(rs1_value | imm),
+                    // andi
+                    0b111 => set_rd(rs1_value & imm),
+                    // slli
+                    0b001 if (shamt_reserved == 0b0000000) => set_rd(rs1_value << shamt),
+                    // srli
+                    0b101 if (shamt_reserved == 0b0000000) => set_rd(rs1_value >> shamt),
+                    // srai
+                    0b101 if (shamt_reserved == 0b0100000) => {
+                        set_rd(signed_left_shift(rs1_value, shamt))
+                    }
+                    _ => todo!(),
+                };
+            }
+            0b0110011 => {
+                let rs1_value = self.read_reg(Instruction::get_rs1(inst));
+                let rs2_value = self.read_reg(Instruction::get_rs2(inst));
+                let funct7 = Instruction::get_funct7(inst);
+                let set_rd = &mut |value: u64| self.write_reg(Instruction::get_rd(inst), value);
+                match Instruction::get_funct3(inst) {
+                    // add
+                    0b000 if (funct7 == 0b0000000) => set_rd(wrapping_add(rs1_value, rs2_value)),
+                    // sub
+                    0b000 if (funct7 == 0b0100000) => set_rd(wrapping_sub(rs1_value, rs2_value)),
+                    // sll
+                    0b001 if (funct7 == 0b0000000) => set_rd(rs1_value << rs2_value),
+                    // slt
+                    0b010 if (funct7 == 0b0000000) => {
+                        if (rs1_value as i64) < (rs2_value as i64) {
+                            set_rd(1)
+                        } else {
+                            set_rd(0)
+                        }
+                    }
+                    // sltu
+                    0b011 if (funct7 == 0b0000000) => {
+                        if rs1_value < rs2_value {
+                            set_rd(1)
+                        } else {
+                            set_rd(0)
+                        }
+                    }
+                    // xor
+                    0b100 if (funct7 == 0b0000000) => set_rd(rs1_value ^ rs2_value),
+                    // srl
+                    0b101 if (funct7 == 0b0000000) => set_rd(rs1_value >> rs2_value),
+                    // sra
+                    0b101 if (funct7 == 0b0100000) => {
+                        set_rd(((rs1_value as i64) >> rs2_value) as u64)
+                    }
+                    // or
+                    0b110 if (funct7 == 0b0000000) => set_rd(rs1_value | rs2_value),
+                    // and
+                    0b111 if (funct7 == 0b0000000) => set_rd(rs1_value & rs2_value),
+                    _ => todo!(),
+                }
+            }
+            0b0011011 => {
+                let rs1_value = self.read_reg(Instruction::get_rs1(inst));
+                let imm = Instruction::get_imm_type_i(inst);
+                let shamt = Instruction::get_shamt(inst);
+                let shamt_reserved = Instruction::get_shamt_reserved(inst);
+                let set_rd = &mut |value: u64| {
+                    self.write_reg(Instruction::get_rd(inst), sext(cut_to_u32(value)))
+                };
+                match Instruction::get_funct3(inst) {
+                    // addiw
+                    0b000 => set_rd(wrapping_add(rs1_value, sext(imm))),
+                    // slliw
+                    0b001 if (shamt_reserved == 0b00_0000) => set_rd(rs1_value << shamt),
+                    // srliw
+                    0b101 if (shamt_reserved == 0b00_0000) => set_rd(rs1_value >> shamt),
+                    // sraiw
+                    0b101 if (shamt_reserved == 0b01_0000) => {
+                        set_rd(signed_left_shift(rs1_value, shamt))
+                    }
+                    _ => todo!(),
+                }
+            }
+            0b0111011 => {
+                let rs1_value = self.read_reg(Instruction::get_rs1(inst));
+                let rs2_value = self.read_reg(Instruction::get_rs2(inst));
+                let funct7 = Instruction::get_funct7(inst);
+                let set_rd = &mut |value: u64| {
+                    self.write_reg(Instruction::get_rd(inst), sext(cut_to_u32(value)))
+                };
+                match Instruction::get_funct3(inst) {
+                    // addw
+                    0b000 if (funct7 == 0b000_0000) => set_rd(wrapping_add(rs1_value, rs2_value)),
+                    // subw
+                    0b000 if (funct7 == 0b010_0000) => set_rd(wrapping_sub(rs1_value, rs2_value)),
+                    // sllw
+                    0b001 if (funct7 == 0b000_0000) => set_rd(rs1_value << (rs2_value & 0b1_1111)),
+                    // srlw
+                    0b101 if (funct7 == 0b000_0000) => set_rd(rs1_value >> (rs2_value & 0b1_1111)),
+                    // sraw
+                    0b101 if (funct7 == 0b010_0000) => {
+                        set_rd(signed_left_shift(rs1_value, rs2_value & 0b1_1111))
+                    }
+                    _ => todo!(),
+                }
+            }
+            0b0110111 => {
+                // lui
+                let rd = Instruction::get_rd(inst);
+                let imm = Instruction::get_imm_type_u(inst);
+                self.write_reg(rd, sext(imm))
+            }
+            0b0010111 => {
+                // auipc
+                let rd = Instruction::get_rd(inst);
+                let imm = Instruction::get_imm_type_u(inst);
+                self.write_reg(rd, wrapping_add(self.pc, imm))
+            }
+            0b1100011 => {
+                let imm = Instruction::get_imm_type_b(inst);
+                let jump_target_pc = wrapping_add(self.pc, sext(imm));
+                match Instruction::get_funct3(inst) {
+                    0b000 => {
+                        // beq
+                        if self.read_reg(Instruction::get_rs1(inst))
+                            == self.read_reg(Instruction::get_rs2(inst))
+                        {
+                            self.set_pc_with_tunning(jump_target_pc);
+                        }
+                    }
+                    0b001 => {
+                        // bne
+                        if self.read_reg(Instruction::get_rs1(inst))
+                            != self.read_reg(Instruction::get_rs2(inst))
+                        {
+                            self.set_pc_with_tunning(jump_target_pc);
+                        }
+                    }
+                    0b100 => {
+                        // blt
+                        if (self.read_reg(Instruction::get_rs1(inst)) as i64)
+                            < (self.read_reg(Instruction::get_rs2(inst)) as i64)
+                        {
+                            self.set_pc_with_tunning(jump_target_pc);
+                        }
+                    }
+                    0b110 => {
+                        // bltu
+                        if self.read_reg(Instruction::get_rs1(inst))
+                            < self.read_reg(Instruction::get_rs2(inst))
+                        {
+                            self.set_pc_with_tunning(jump_target_pc);
+                        }
+                    }
+                    0b101 => {
+                        // bge
+                        if (self.read_reg(Instruction::get_rs1(inst)) as i64)
+                            >= (self.read_reg(Instruction::get_rs2(inst)) as i64)
+                        {
+                            self.set_pc_with_tunning(jump_target_pc);
+                        }
+                    }
+                    0b111 => {
+                        // bgeu
+                        if self.read_reg(Instruction::get_rs1(inst))
+                            >= self.read_reg(Instruction::get_rs2(inst))
+                        {
+                            self.set_pc_with_tunning(jump_target_pc);
+                        }
+                    }
+                    _ => todo!(),
+                };
+            }
+            0b1100111 => match Instruction::get_funct3(inst) {
+                0b000 => {
+                    // jalr
+                    let t = self.pc + 4;
+                    self.set_pc_with_tunning(wrapping_add(
+                        self.read_reg(Instruction::get_rs1(inst)),
+                        sext(Instruction::get_imm_type_i(inst)) & (!1u64),
+                    ));
+                    self.write_reg(Instruction::get_rd(inst), t);
+                }
+                _ => todo!(),
+            },
+            0b1101111 => {
+                // jal
+                self.write_reg(Instruction::get_rd(inst), wrapping_add(self.pc, 4));
+                self.set_pc_with_tunning(wrapping_add(
+                    self.pc,
+                    sext(Instruction::get_imm_type_j(inst)),
+                ))
+            }
+            // fence
+            0b0001111 => (),
+            _ => todo!(),
+        };
         Ok(())
     }
 }
