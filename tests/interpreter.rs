@@ -58,7 +58,7 @@ addi x29, x0, 0x5
 addi x30, x0, 0x10
 add x31, x30, x29",
     );
-    let cpu = start(code);
+    let cpu = start(code).0;
     assert_eq!(cpu.regs[29], 0x5);
     assert_eq!(cpu.regs[30], 0x10);
     assert_eq!(cpu.regs[31], 0x15);

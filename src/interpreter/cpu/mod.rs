@@ -1,30 +1,33 @@
+use super::{bus::Bus, exception::Exception, DRAM_BASE, DRAM_END};
 pub mod debug;
 pub mod execute;
 
 pub struct Cpu {
     pub regs: [u64; 32], // RISC-V has 32 registers
     pub pc: u64,
-    pub dram: Vec<u8>,
+    pub bus: Bus,
 }
 
 impl Cpu {
     pub fn new(code: Vec<u8>) -> Self {
-        const DRAM_SIZE: u64 = 1024 * 1024 * 128;
         let mut regs = [0; 32];
-        regs[2] = DRAM_SIZE - 1;
+        regs[2] = DRAM_END;
         Self {
             regs,
-            pc: 0,
-            dram: code,
+            pc: DRAM_BASE,
+            bus: Bus::new(code),
         }
     }
 
-    pub fn instructure_fetch(&self) -> u32 {
-        let index = self.pc as usize;
-        let inst = self.dram[index] as u32
-            | ((self.dram[index + 1] as u32) << 8)
-            | ((self.dram[index + 2] as u32) << 16)
-            | ((self.dram[index + 3] as u32) << 24);
-        return inst;
+    pub fn load(&mut self, addr: u64, size: u64) -> Result<u64, Exception> {
+        self.bus.load(addr, size)
+    }
+
+    pub fn store(&mut self, addr: u64, size: u64, value: u64) -> Result<(), Exception> {
+        self.bus.store(addr, size, value)
+    }
+
+    pub fn instructure_fetch(&mut self) -> Result<u32, Exception> {
+        self.bus.load(self.pc, 32).map(|inst| inst as u32)
     }
 }
