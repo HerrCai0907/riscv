@@ -1,5 +1,11 @@
 mod utils;
-use riscv::interpreter::{cpu::Cpu, DRAM_BASE};
+use riscv::interpreter::{
+    cpu::{
+        csr::{MEPC, MSTATUS, MTVEC, SEPC, SSTATUS, STVEC},
+        Cpu,
+    },
+    exception, DRAM_BASE,
+};
 use utils::compile_assembly::compile_assembly;
 
 #[test]
@@ -9,7 +15,8 @@ fn test_add_instruction() {
     cpu.write_reg(30, 0x5);
     cpu.write_reg(29, 0x10);
 
-    cpu.execute();
+    let err = cpu.execute().unwrap();
+    assert_eq!(err, exception::Exception::InvalidInstruction);
 
     assert_eq!(cpu.read_reg(31), 0x15);
 }
@@ -19,7 +26,8 @@ fn test_addi_instruction() {
     let code = compile_assembly(function_name!(), "addi x31, x0, 0x34");
     let mut cpu = Cpu::new(code);
 
-    cpu.execute();
+    let err = cpu.execute().unwrap();
+    assert_eq!(err, exception::Exception::InvalidInstruction);
 
     assert_eq!(cpu.read_reg(31), 0x34);
 }
@@ -30,7 +38,8 @@ fn test_auipc_instruction() {
     let mut cpu = Cpu::new(code);
     let pc = cpu.pc;
 
-    cpu.execute();
+    let err = cpu.execute().unwrap();
+    assert_eq!(err, exception::Exception::InvalidInstruction);
 
     assert_eq!(cpu.read_reg(31), pc + (0x7 << 12));
 }
@@ -40,7 +49,8 @@ fn test_lui_instruction() {
     let code = compile_assembly(function_name!(), "lui x10, 0x7");
     let mut cpu = Cpu::new(code);
 
-    cpu.execute();
+    let err = cpu.execute().unwrap();
+    assert_eq!(err, exception::Exception::InvalidInstruction);
 
     assert_eq!(cpu.read_reg(10), 0x7 << 12);
 }
@@ -51,7 +61,8 @@ fn test_jal_instruction() {
     let mut cpu = Cpu::new(code);
     let pc = cpu.pc;
 
-    cpu.execute();
+    let err = cpu.execute().unwrap();
+    assert_eq!(err, exception::Exception::InvalidInstruction);
 
     assert_eq!(cpu.read_reg(10), pc + 4);
     assert_eq!(cpu.pc, pc + 0x16);
@@ -64,7 +75,11 @@ fn test_jalr_instruction() {
     let pc = cpu.pc;
     cpu.write_reg(11, 0x100);
 
-    cpu.execute();
+    let err = cpu.execute().unwrap();
+    assert_eq!(
+        err,
+        exception::Exception::LoadAccessFault { address: cpu.pc }
+    );
 
     assert_eq!(cpu.read_reg(10), pc + 4);
     assert_eq!(cpu.pc, 0x100 + 0x16);
@@ -80,7 +95,8 @@ fn test_beq_instruction() {
         cpu.write_reg(1, 0x100);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 16);
     }
@@ -92,7 +108,8 @@ fn test_beq_instruction() {
         cpu.write_reg(1, 0x100);
         cpu.write_reg(2, 0x0);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 4);
     }
@@ -108,7 +125,8 @@ fn test_bne_instruction() {
         cpu.write_reg(1, 0x100);
         cpu.write_reg(2, 0x0);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 16);
     }
@@ -120,7 +138,8 @@ fn test_bne_instruction() {
         cpu.write_reg(1, 0x100);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 4);
     }
@@ -136,7 +155,8 @@ fn test_blt_instruction() {
         cpu.write_reg(1, 0x99);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 16);
     }
@@ -148,7 +168,8 @@ fn test_blt_instruction() {
         cpu.write_reg(1, 0x100);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 4);
     }
@@ -160,7 +181,8 @@ fn test_blt_instruction() {
         cpu.write_reg(1, 0x101);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 4);
     }
@@ -176,7 +198,8 @@ fn test_bge_instruction() {
         cpu.write_reg(1, 0x101);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 16);
     }
@@ -188,7 +211,8 @@ fn test_bge_instruction() {
         cpu.write_reg(1, 0x100);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 16);
     }
@@ -200,7 +224,8 @@ fn test_bge_instruction() {
         cpu.write_reg(1, 0x99);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 4);
     }
@@ -216,7 +241,8 @@ fn test_bltu_instruction() {
         cpu.write_reg(1, 0x99);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 16);
     }
@@ -228,7 +254,8 @@ fn test_bltu_instruction() {
         cpu.write_reg(1, 0x100);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 4);
     }
@@ -240,7 +267,8 @@ fn test_bltu_instruction() {
         cpu.write_reg(1, 0x101);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 4);
     }
@@ -256,7 +284,8 @@ fn test_bgeu_instruction() {
         cpu.write_reg(1, 0x101);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 16);
     }
@@ -268,7 +297,8 @@ fn test_bgeu_instruction() {
         cpu.write_reg(1, 0x100);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 16);
     }
@@ -280,7 +310,8 @@ fn test_bgeu_instruction() {
         cpu.write_reg(1, 0x99);
         cpu.write_reg(2, 0x100);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 4);
     }
@@ -296,7 +327,8 @@ fn test_bltu_blt_instruction() {
         cpu.write_reg(1, 0x100);
         cpu.write_reg(2, u64::MAX);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 4);
     }
@@ -308,7 +340,8 @@ fn test_bltu_blt_instruction() {
         cpu.write_reg(1, 0x100);
         cpu.write_reg(2, u64::MAX);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.pc, pc + 16);
     }
@@ -324,7 +357,8 @@ fn test_load_instruction() {
             .store(DRAM_BASE + 16, 64, 0x01234567)
             .expect("store");
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.read_reg(1), 0x67);
     }
@@ -335,7 +369,8 @@ fn test_load_instruction() {
         cpu.bus
             .store(DRAM_BASE + 16, 64, 0x01234567)
             .expect("store");
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.read_reg(1), 0x4567);
     }
@@ -346,7 +381,8 @@ fn test_load_instruction() {
         cpu.bus
             .store(DRAM_BASE + 16, 64, 0x01234567)
             .expect("store");
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.read_reg(1), 0x01234567);
     }
@@ -357,7 +393,8 @@ fn test_load_instruction() {
         cpu.bus
             .store(DRAM_BASE + 16, 64, 0xf1234567)
             .expect("store");
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.read_reg(1), 0x00000000_f1234567);
     }
@@ -368,7 +405,8 @@ fn test_load_instruction() {
         cpu.bus
             .store(DRAM_BASE + 16, 64, 0xf1234567)
             .expect("store");
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.read_reg(1), 0xffffffff_f1234567);
     }
@@ -382,7 +420,8 @@ fn test_store_instruction() {
         cpu.write_reg(2, DRAM_BASE);
         cpu.write_reg(1, 0x01234567);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.bus.load(DRAM_BASE + 16, 64).expect("load"), 0x67);
     }
@@ -392,7 +431,8 @@ fn test_store_instruction() {
         cpu.write_reg(2, DRAM_BASE);
         cpu.write_reg(1, 0x01234567);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.bus.load(DRAM_BASE + 16, 64).expect("load"), 0x4567);
     }
@@ -402,8 +442,40 @@ fn test_store_instruction() {
         cpu.write_reg(2, DRAM_BASE);
         cpu.write_reg(1, 0x01234567);
 
-        cpu.execute();
+        let err = cpu.execute().unwrap();
+        assert_eq!(err, exception::Exception::InvalidInstruction);
 
         assert_eq!(cpu.bus.load(DRAM_BASE + 16, 64).expect("load"), 0x01234567);
     }
+}
+
+#[test]
+fn test_csrs() {
+    let code = compile_assembly(
+        function_name!(),
+        "
+            addi t0, zero, 1
+            addi t1, zero, 2
+            addi t2, zero, 3
+            csrrw zero, mstatus, t0
+            csrrs zero, mtvec, t1
+            csrrw zero, mepc, t2
+            csrrc t2, mepc, zero
+            csrrwi zero, sstatus, 4
+            csrrsi zero, stvec, 5
+            csrrwi zero, sepc, 6
+            csrrci zero, sepc, 0
+        ",
+    );
+    let mut cpu = Cpu::new(code);
+    let err = cpu.execute().unwrap();
+    assert_eq!(err, exception::Exception::InvalidInstruction);
+
+    assert_eq!(cpu.csr.load(MSTATUS), 1);
+    assert_eq!(cpu.csr.load(MTVEC), 2);
+    assert_eq!(cpu.csr.load(MEPC), 3);
+
+    assert_eq!(cpu.csr.load(SSTATUS), 0);
+    assert_eq!(cpu.csr.load(STVEC), 5);
+    assert_eq!(cpu.csr.load(SEPC), 6);
 }

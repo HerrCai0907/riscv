@@ -1,4 +1,6 @@
+use self::csr::Csr;
 use super::{bus::Bus, exception::Exception, DRAM_BASE, DRAM_END};
+pub mod csr;
 pub mod debug;
 pub mod execute;
 
@@ -6,6 +8,7 @@ pub struct Cpu {
     pub regs: [u64; 32], // RISC-V has 32 registers
     pub pc: u64,
     pub bus: Bus,
+    pub csr: Csr,
 }
 
 impl Cpu {
@@ -16,6 +19,7 @@ impl Cpu {
             regs,
             pc: DRAM_BASE,
             bus: Bus::new(code),
+            csr: Csr::new(),
         }
     }
 
